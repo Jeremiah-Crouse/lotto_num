@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Lottery Ticket Generator (Quantum, Accurate Timer)</title>
+  <title>Lottery Ticket Generator (Quantum, All Games)</title>
   <style>
     body { background: #252858; color: #fff; font-family: sans-serif; }
-    .container { margin: 6em auto; width: 410px; background: #334161; padding: 2.2em 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
+    .container { margin: 6em auto; width: 450px; background: #334161; padding: 2.2em 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
     h2 { margin-bottom: 1.3em; text-align: center; }
     select, input[type="number"] {
       font-size: 1em; margin: 0 .5em .8em .6em; padding: .25em .7em;
@@ -25,6 +25,7 @@
     .ball { display: inline-block; width: 2.15em; height: 2.15em; margin: 0.15em 0.20em; line-height: 2.15em; border-radius: 50%; background: #fafafa; color: #252858; font-weight: bold; font-size: 1.13em; box-shadow: 0 2px 7px #0006; border: 3px solid #e6e6e6;}
     .megaball { background: #ffd600; color: #222; border: 3px solid #ffac22; }
     .powerball { background: #ea3131; color: #fff; border: 3px solid #d68a8a;}
+    .lucky { background: #7fd3ff; color: #1b466a; border: 3px solid #bee6f7;}
     .err { color: #ffa600; font-size: 1.08em; margin: 0.8em 0 0 0; text-align: center; }
     .timer { font-size: 0.96em; color: #ffd600; text-align: center; margin-top: 0.23em; }
     label { font-size:1.02em;}
@@ -40,6 +41,7 @@
           <select id="gametype">
             <option value="megamillions">Mega Millions</option>
             <option value="powerball">Powerball</option>
+            <option value="euromillions">EuroMillions</option>
           </select>
         </label>
         <label>
@@ -90,13 +92,23 @@
       // Get options
       const gametype = document.getElementById("gametype").value;
       let tickets = Math.max(1, Math.min(10, parseInt(document.getElementById("multidraw").value, 10)||1));
-      // Set rules (Mega Ball should be 1-24)
+      // Updated rules, EuroMillions included
       let rules = {
-        megamillions: { nWhite:5, whiteMin:1, whiteMax:70, megaMin:1, megaMax:24, megaLabel:"Mega Ball", megaClass:"megaball" },
-        powerball:    { nWhite:5, whiteMin:1, whiteMax:69, megaMin:1, megaMax:26, megaLabel:"Powerball", megaClass:"powerball" }
+        megamillions: {
+          nWhite:5, whiteMin:1, whiteMax:70, nMega:1, megaMin:1, megaMax:24,
+          megaLabel:"Mega Ball", megaClass:"megaball", mainLabel:"White Balls", ticketName:"Mega Millions"
+        },
+        powerball: {
+          nWhite:5, whiteMin:1, whiteMax:69, nMega:1, megaMin:1, megaMax:26,
+          megaLabel:"Powerball", megaClass:"powerball", mainLabel:"White Balls", ticketName:"Powerball"
+        },
+        euromillions: {
+          nWhite:5, whiteMin:1, whiteMax:50, nMega:2, megaMin:1, megaMax:12,
+          megaLabel:"Lucky Stars", megaClass:"lucky", mainLabel:"Main Numbers", ticketName:"EuroMillions"
+        }
       }[gametype];
-      // Figure out how many random 16-bit ints needed, estimate max needed for rerolls.
-      const apiNeeded = tickets * (rules.nWhite + 2);
+      // Figure out how many randoms needed: slightly more than minimum in case of dodging duplicates
+      const apiNeeded = tickets * (rules.nWhite + rules.nMega + 5); 
       startCooldown();
 
       try {
@@ -109,7 +121,7 @@
         let resHtml = '';
         let pos = 0;
         for(let t=0; t<tickets; ++t) {
-          // Get unique white balls
+          // Get unique main balls
           let balls = [];
           let attempts = 0;
           while(balls.length < rules.nWhite && attempts < 40) {
@@ -118,17 +130,24 @@
             attempts++;
           }
           balls.sort((a,b)=>a-b);
-          // Get Mega or Powerball
-          let mega = scaleRaw(raw[(pos++) % raw.length], rules.megaMin, rules.megaMax);
+          // Get unique bonus balls (Mega Ball, Powerball or Lucky Stars)
+          let megas = [];
+          let megaAttempts = 0;
+          while(megas.length < (rules.nMega||1) && megaAttempts < 30) {
+            let v = scaleRaw(raw[(pos++) % raw.length], rules.megaMin, rules.megaMax);
+            if(!megas.includes(v)) megas.push(v);
+            megaAttempts++;
+          }
+          megas.sort((a,b)=>a-b);
 
           resHtml += `<div class="ticketblock">
             <div class="mm-balls">
-              ${gametype === "megamillions" ? "Mega Millions" : "Powerball"} Ticket #${t+1}:<br>
-              <span>White Balls:</span>
+              ${rules.ticketName} Ticket #${t+1}:<br>
+              <span>${rules.mainLabel}:</span>
               ${balls.map(n=>`<span class="ball">${n}</span>`).join('')}
               <br>
               <span>${rules.megaLabel}:</span>
-              <span class="ball ${rules.megaClass}">${mega}</span>
+              ${megas.map(n=>`<span class="ball ${rules.megaClass}">${n}</span>`).join(' ')}
             </div>
           </div>`;
         }
