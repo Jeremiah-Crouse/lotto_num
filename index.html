@@ -2,31 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>ANU QRNG Lottery Ticket Picker</title>
+  <title>Mega Millions Ticket Generator (Quantum!)</title>
   <style>
-    body { background: #1b2738; color: #fff; font-family: sans-serif; }
-    .container { margin: 6em auto; width: 350px; background: #223451; padding: 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
-    label, input { display: block; margin-bottom: 1em; font-size: 1.1em; }
-    input { width: 60px; margin-left: 5px; }
+    body { background: #252858; color: #fff; font-family: sans-serif; }
+    .container { margin: 6em auto; width: 360px; background: #334161; padding: 2em 1.8em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
+    h2 { margin-bottom: 1.3em; text-align: center; }
     button {
-      padding: 11px 22px; font-size: 1.1em; background: #18a754;
-      color: #fff; border: none; border-radius: 7px; cursor: pointer;
-      margin-bottom: 1em; margin-top: 10px;
+      display: block; margin: 1.6em auto 1em auto; padding: 13px 32px;
+      font-size: 1.1em; background: #ffa600; color: #252858;
+      border: none; border-radius: 9px; cursor: pointer;
+      font-weight: bold; transition: 0.1s;
     }
-    button:disabled { background: #4b626e; cursor: not-allowed;}
-    .result { font-size: 2em; text-align: center; margin: 1em 0 0 0; }
+    button:disabled { background: #4b626e; cursor: not-allowed; color: #ccc; }
+    .result { font-size: 1.8em; margin-top: 1.7em; text-align: center; }
+    .mm-balls { margin-top: 1em; text-align: center; }
+    .ball { display: inline-block; width: 2.4em; height: 2.4em; margin: 0.18em 0.23em; line-height: 2.4em; border-radius: 50%; background: #fafafa; color: #252858; font-weight: bold; font-size: 1.3em; box-shadow: 0 2px 7px #0006; border: 3px solid #e6e6e6;}
+    .megaball { background: #ffd600; color: #222; border: 3px solid #ffac22; }
+    .err { color: #ffa600; font-size: 1.08em; margin: 0.6em 0 0 0; text-align: center; }
     .timer { font-size: 0.95em; color: #ffd600; text-align: center; margin-top: 0.2em; }
-    .err { color: #ffa600; font-size: 1em; margin: 0.5em 0 0 0; text-align: center;}
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Lottery Number Picker (Quantum Random!)</h2>
-    <form onsubmit="event.preventDefault(); getNumber();">
-      <label>Minimum: <input type="number" id="min" value="1" /></label>
-      <label>Maximum: <input type="number" id="max" value="100" /></label>
-      <button id="getBtn" type="submit">Get Number</button>
-    </form>
+    <h2>Mega Millions Ticket Generator <span style="font-size:1.15em;">🎲</span></h2>
+    <button id="getBtn" onclick="getMegaTicket()">Get Mega Millions Ticket</button>
     <div class="timer" id="cooldown"></div>
     <div class="err" id="error"></div>
     <div class="result" id="result"></div>
@@ -53,32 +52,45 @@
       document.getElementById("cooldown").textContent = cooldown > 0
         ? `Cooldown: Please wait ${cooldown} second${cooldown === 1 ? '' : 's'}...` : "";
     }
-    async function getNumber() {
+
+    function scaleRaw(val, min, max) {
+      // Scale 0–65535 into min–max inclusive:
+      return Math.floor((val / 65535) * (max - min + 1)) + min;
+    }
+    async function getMegaTicket() {
       document.getElementById("error").textContent = "";
       document.getElementById("result").textContent = "";
-      const min = parseInt(document.getElementById("min").value, 10);
-      const max = parseInt(document.getElementById("max").value, 10);
-      if (isNaN(min) || isNaN(max) || min >= max) {
-        document.getElementById("error").textContent = "Please enter a valid range (min < max)";
-        return;
-      }
-
       startCooldown();
 
       try {
-        // ANU QRNG API: get a single 16-bit unsigned integer
-        const url = 'https://qrng.anu.edu.au/API/jsonI.php?length=1&type=uint16';
+        // Get 6 random 16-bit unsigned ints from ANU QRNG
+        const url = 'https://qrng.anu.edu.au/API/jsonI.php?length=6&type=uint16';
         const response = await fetch(url);
-        if (!response.ok) throw new Error("Network error!");
+        if (!response.ok) throw new Error("Network error.");
         const data = await response.json();
-        if (!data.success) throw new Error("API error!");
-        const rawValue = data.data[0]; // Value from 0 to 65535
+        if (!data.success || !data.data || data.data.length !== 6) throw new Error("API error!");
+        let nums = data.data.slice(); // Array of 6 numbers: [n1, n2, n3, n4, n5, n6]
 
-        // Scale to min-max
-        const scaled = Math.floor((rawValue / 65535) * (max - min + 1)) + min;
-        document.getElementById("result").textContent = `🎲 Your number: ${scaled}`;
+        // Scale first 5 across 1–70, and last across 1–24; make first 5 unique (Mega Millions rules!)
+        let balls = [];
+        while(balls.length < 5) {
+          let scaled = scaleRaw(nums[balls.length], 1, 70);
+          if (!balls.includes(scaled)) balls.push(scaled);
+          else nums[balls.length] = (nums[balls.length]+1)%65536; // minimal tweak to avoid duplicates
+        }
+        balls.sort((a,b) => a-b); // sort for aesthetics
+        let mega = scaleRaw(nums[5], 1, 24);
+
+        // Output
+        document.getElementById("result").innerHTML =
+          `<div class="mm-balls">
+             <span>White Balls:</span>
+             ${balls.map(n=>`<span class="ball">${n}</span>`).join('')}
+             <br>
+             <span>Mega Ball:</span> <span class="ball megaball">${mega}</span>
+           </div>`;
       } catch (e) {
-        document.getElementById("error").textContent = "Sorry! Couldn't get a random number.";
+        document.getElementById("error").textContent = "Sorry! Couldn't get a quantum random ticket.";
       }
     }
   </script>
