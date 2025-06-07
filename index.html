@@ -2,30 +2,53 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Mega Millions Ticket Generator (Quantum!)</title>
+  <title>Lottery Ticket Generator (Mega Millions, Powerball, Multi-Draw)</title>
   <style>
     body { background: #252858; color: #fff; font-family: sans-serif; }
-    .container { margin: 6em auto; width: 360px; background: #334161; padding: 2em 1.8em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
+    .container { margin: 6em auto; width: 410px; background: #334161; padding: 2.2em 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
     h2 { margin-bottom: 1.3em; text-align: center; }
+    select, input[type="number"] {
+      font-size: 1em; margin: 0 .5em .8em .6em; padding: .25em .7em;
+      border-radius: 6px; border: none; color: #242958; background: #ececec
+    }
+    .picker { text-align: center; margin-bottom:1.3em;}
     button {
-      display: block; margin: 1.6em auto 1em auto; padding: 13px 32px;
-      font-size: 1.1em; background: #ffa600; color: #252858;
+      display: block; margin: 1.7em auto 1.2em auto; padding: 13px 32px;
+      font-size: 1.08em; background: #ffa600; color: #252858;
       border: none; border-radius: 9px; cursor: pointer;
       font-weight: bold; transition: 0.1s;
     }
     button:disabled { background: #4b626e; cursor: not-allowed; color: #ccc; }
-    .result { font-size: 1.8em; margin-top: 1.7em; text-align: center; }
-    .mm-balls { margin-top: 1em; text-align: center; }
-    .ball { display: inline-block; width: 2.4em; height: 2.4em; margin: 0.18em 0.23em; line-height: 2.4em; border-radius: 50%; background: #fafafa; color: #252858; font-weight: bold; font-size: 1.3em; box-shadow: 0 2px 7px #0006; border: 3px solid #e6e6e6;}
+    .ticketblock { background: #253051; margin: 1.1em 0; border-radius: 8px; padding: .7em .8em .4em; }
+    .result { font-size: 1.2em; text-align: center; }
+    .mm-balls { margin-top: .2em; text-align: center; }
+    .ball { display: inline-block; width: 2.15em; height: 2.15em; margin: 0.15em 0.20em; line-height: 2.15em; border-radius: 50%; background: #fafafa; color: #252858; font-weight: bold; font-size: 1.13em; box-shadow: 0 2px 7px #0006; border: 3px solid #e6e6e6;}
     .megaball { background: #ffd600; color: #222; border: 3px solid #ffac22; }
-    .err { color: #ffa600; font-size: 1.08em; margin: 0.6em 0 0 0; text-align: center; }
-    .timer { font-size: 0.95em; color: #ffd600; text-align: center; margin-top: 0.2em; }
+    .powerball { background: #ea3131; color: #fff; border: 3px solid #d68a8a;}
+    .err { color: #ffa600; font-size: 1.08em; margin: 0.8em 0 0 0; text-align: center; }
+    .timer { font-size: 0.96em; color: #ffd600; text-align: center; margin-top: 0.23em; }
+    label { font-size:1.02em;}
   </style>
 </head>
 <body>
   <div class="container">
-    <h2>Mega Millions Ticket Generator <span style="font-size:1.15em;">🎲</span></h2>
-    <button id="getBtn" onclick="getMegaTicket()">Get Mega Millions Ticket</button>
+    <h2>Lottery Ticket Generator <span style="font-size:1.14em">🎲</span></h2>
+    <div class="picker">
+      <form id="lottoform" onsubmit="event.preventDefault(); getTickets();">
+        <label>
+          Game:&nbsp;
+          <select id="gametype">
+            <option value="megamillions">Mega Millions</option>
+            <option value="powerball">Powerball</option>
+          </select>
+        </label>
+        <label>
+          Multi-Draw:
+          <input id="multidraw" type="number" min="1" max="10" value="1" style="width:50px" />
+        </label>
+        <button id="getBtn" type="submit">Get Ticket(s)</button>
+      </form>
+    </div>
     <div class="timer" id="cooldown"></div>
     <div class="err" id="error"></div>
     <div class="result" id="result"></div>
@@ -54,43 +77,62 @@
     }
 
     function scaleRaw(val, min, max) {
-      // Scale 0–65535 into min–max inclusive:
       return Math.floor((val / 65535) * (max - min + 1)) + min;
     }
-    async function getMegaTicket() {
+
+    async function getTickets() {
       document.getElementById("error").textContent = "";
       document.getElementById("result").textContent = "";
+      // Get options
+      const gametype = document.getElementById("gametype").value;
+      let tickets = Math.max(1, Math.min(10, parseInt(document.getElementById("multidraw").value, 10)||1));
+      // Set rules
+      let rules = {
+        megamillions: { nWhite:5, whiteMin:1, whiteMax:70, megaMin:1, megaMax:24, megaLabel:"Mega Ball", megaClass:"megaball" },
+        powerball:    { nWhite:5, whiteMin:1, whiteMax:69, megaMin:1, megaMax:26, megaLabel:"Powerball", megaClass:"powerball" }
+      }[gametype];
+      
+      // Figure out how many random 16-bit ints needed
+      // For safety, fetch up to 12 per ticket to allow for rerolls (no duplicates) in rare event.
+      const apiNeeded = tickets * (rules.nWhite + 2); // a bit more than the minimal
       startCooldown();
 
       try {
-        // Get 6 random 16-bit unsigned ints from ANU QRNG
-        const url = 'https://qrng.anu.edu.au/API/jsonI.php?length=6&type=uint16';
+        const url = `https://qrng.anu.edu.au/API/jsonI.php?length=${apiNeeded}&type=uint16`;
         const response = await fetch(url);
         if (!response.ok) throw new Error("Network error.");
         const data = await response.json();
-        if (!data.success || !data.data || data.data.length !== 6) throw new Error("API error!");
-        let nums = data.data.slice(); // Array of 6 numbers: [n1, n2, n3, n4, n5, n6]
+        if (!data.success || !data.data || data.data.length < tickets * rules.nWhite) throw new Error("API error!");
+        let raw = data.data.slice();
+        let resHtml = '';
+        let pos = 0;
+        for(let t=0; t<tickets; ++t) {
+          // Get unique white balls
+          let balls = [];
+          let attempts = 0; // fail-safe
+          while(balls.length < rules.nWhite && attempts < 40) {
+            let v = scaleRaw(raw[(pos++) % raw.length], rules.whiteMin, rules.whiteMax);
+            if(!balls.includes(v)) balls.push(v);
+            attempts++;
+          }
+          balls.sort((a,b)=>a-b);
+          // Get Mega or Powerball
+          let mega = scaleRaw(raw[(pos++) % raw.length], rules.megaMin, rules.megaMax);
 
-        // Scale first 5 across 1–70, and last across 1–24; make first 5 unique (Mega Millions rules!)
-        let balls = [];
-        while(balls.length < 5) {
-          let scaled = scaleRaw(nums[balls.length], 1, 70);
-          if (!balls.includes(scaled)) balls.push(scaled);
-          else nums[balls.length] = (nums[balls.length]+1)%65536; // minimal tweak to avoid duplicates
+          resHtml += `<div class="ticketblock">
+            <div class="mm-balls">
+              ${gametype === "megamillions" ? "Mega Millions" : "Powerball"} Ticket #${t+1}:<br>
+              <span>White Balls:</span>
+              ${balls.map(n=>`<span class="ball">${n}</span>`).join('')}
+              <br>
+              <span>${rules.megaLabel}:</span>
+              <span class="ball ${rules.megaClass}">${mega}</span>
+            </div>
+          </div>`;
         }
-        balls.sort((a,b) => a-b); // sort for aesthetics
-        let mega = scaleRaw(nums[5], 1, 24);
-
-        // Output
-        document.getElementById("result").innerHTML =
-          `<div class="mm-balls">
-             <span>White Balls:</span>
-             ${balls.map(n=>`<span class="ball">${n}</span>`).join('')}
-             <br>
-             <span>Mega Ball:</span> <span class="ball megaball">${mega}</span>
-           </div>`;
+        document.getElementById("result").innerHTML = resHtml;
       } catch (e) {
-        document.getElementById("error").textContent = "Sorry! Couldn't get a quantum random ticket.";
+        document.getElementById("error").textContent = "Sorry! Couldn't get quantum ticket(s).";
       }
     }
   </script>
