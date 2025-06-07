@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ANU QRNG Lottery Ticket Picker</title>
+  <style>
+    body { background: #1b2738; color: #fff; font-family: sans-serif; }
+    .container { margin: 6em auto; width: 350px; background: #223451; padding: 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
+    label, input { display: block; margin-bottom: 1em; font-size: 1.1em; }
+    input { width: 60px; margin-left: 5px; }
+    button {
+      padding: 11px 22px; font-size: 1.1em; background: #18a754;
+      color: #fff; border: none; border-radius: 7px; cursor: pointer;
+      margin-bottom: 1em; margin-top: 10px;
+    }
+    button:disabled { background: #4b626e; cursor: not-allowed;}
+    .result { font-size: 2em; text-align: center; margin: 1em 0 0 0; }
+    .timer { font-size: 0.95em; color: #ffd600; text-align: center; margin-top: 0.2em; }
+    .err { color: #ffa600; font-size: 1em; margin: 0.5em 0 0 0; text-align: center;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Lottery Number Picker (Quantum Random!)</h2>
+    <form onsubmit="event.preventDefault(); getNumber();">
+      <label>Minimum: <input type="number" id="min" value="1" /></label>
+      <label>Maximum: <input type="number" id="max" value="100" /></label>
+      <button id="getBtn" type="submit">Get Number</button>
+    </form>
+    <div class="timer" id="cooldown"></div>
+    <div class="err" id="error"></div>
+    <div class="result" id="result"></div>
+  </div>
+  <script>
+    let cooldown = 0, cooldownTimer = null;
+    const cooldownSeconds = 60;
+
+    function startCooldown() {
+      cooldown = cooldownSeconds;
+      updateCooldownText();
+      document.getElementById("getBtn").disabled = true;
+      cooldownTimer = setInterval(() => {
+        --cooldown;
+        updateCooldownText();
+        if (cooldown <= 0) {
+          clearInterval(cooldownTimer);
+          document.getElementById("getBtn").disabled = false;
+          document.getElementById("cooldown").textContent = "";
+        }
+      }, 1000);
+    }
+    function updateCooldownText() {
+      document.getElementById("cooldown").textContent = cooldown > 0
+        ? `Cooldown: Please wait ${cooldown} second${cooldown === 1 ? '' : 's'}...` : "";
+    }
+    async function getNumber() {
+      document.getElementById("error").textContent = "";
+      document.getElementById("result").textContent = "";
+      const min = parseInt(document.getElementById("min").value, 10);
+      const max = parseInt(document.getElementById("max").value, 10);
+      if (isNaN(min) || isNaN(max) || min >= max) {
+        document.getElementById("error").textContent = "Please enter a valid range (min < max)";
+        return;
+      }
+
+      startCooldown();
+
+      try {
+        // ANU QRNG API: get a single 16-bit unsigned integer
+        const url = 'https://qrng.anu.edu.au/API/jsonI.php?length=1&type=uint16';
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Network error!");
+        const data = await response.json();
+        if (!data.success) throw new Error("API error!");
+        const rawValue = data.data[0]; // Value from 0 to 65535
+
+        // Scale to min-max
+        const scaled = Math.floor((rawValue / 65535) * (max - min + 1)) + min;
+        document.getElementById("result").textContent = `🎲 Your number: ${scaled}`;
+      } catch (e) {
+        document.getElementById("error").textContent = "Sorry! Couldn't get a random number.";
+      }
+    }
+  </script>
+</body>
+</html>
