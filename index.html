@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Lottery Ticket Generator (Mega Millions, Powerball, Multi-Draw)</title>
+  <title>Lottery Ticket Generator (Quantum, Accurate Timer)</title>
   <style>
     body { background: #252858; color: #fff; font-family: sans-serif; }
     .container { margin: 6em auto; width: 410px; background: #334161; padding: 2.2em 2em; border-radius: 12px; box-shadow: 0 5px 32px #0008; }
@@ -54,26 +54,30 @@
     <div class="result" id="result"></div>
   </div>
   <script>
-    let cooldown = 0, cooldownTimer = null;
+    // === Accurate, real-time cooldown ===
+    let cooldownActive = false, cooldownEndsAt = 0, cooldownInterval = null;
     const cooldownSeconds = 60;
 
     function startCooldown() {
-      cooldown = cooldownSeconds;
-      updateCooldownText();
+      cooldownEndsAt = Date.now() + cooldownSeconds * 1000;
+      cooldownActive = true;
       document.getElementById("getBtn").disabled = true;
-      cooldownTimer = setInterval(() => {
-        --cooldown;
-        updateCooldownText();
-        if (cooldown <= 0) {
-          clearInterval(cooldownTimer);
-          document.getElementById("getBtn").disabled = false;
-          document.getElementById("cooldown").textContent = "";
-        }
-      }, 1000);
+      updateCooldownText();
+      if (cooldownInterval) clearInterval(cooldownInterval);
+      cooldownInterval = setInterval(updateCooldownText, 200);
     }
     function updateCooldownText() {
-      document.getElementById("cooldown").textContent = cooldown > 0
-        ? `Cooldown: Please wait ${cooldown} second${cooldown === 1 ? '' : 's'}...` : "";
+      if (!cooldownActive) return;
+      let msLeft = cooldownEndsAt - Date.now();
+      if (msLeft <= 0) {
+        cooldownActive = false;
+        clearInterval(cooldownInterval);
+        document.getElementById("getBtn").disabled = false;
+        document.getElementById("cooldown").textContent = "";
+        return;
+      }
+      let sLeft = Math.ceil(msLeft / 1000);
+      document.getElementById("cooldown").textContent = `Cooldown: Please wait ${sLeft} second${sLeft === 1 ? "" : "s"}...`;
     }
 
     function scaleRaw(val, min, max) {
@@ -86,15 +90,13 @@
       // Get options
       const gametype = document.getElementById("gametype").value;
       let tickets = Math.max(1, Math.min(10, parseInt(document.getElementById("multidraw").value, 10)||1));
-      // Set rules
+      // Set rules (Mega Ball should be 1-24)
       let rules = {
         megamillions: { nWhite:5, whiteMin:1, whiteMax:70, megaMin:1, megaMax:24, megaLabel:"Mega Ball", megaClass:"megaball" },
         powerball:    { nWhite:5, whiteMin:1, whiteMax:69, megaMin:1, megaMax:26, megaLabel:"Powerball", megaClass:"powerball" }
       }[gametype];
-      
-      // Figure out how many random 16-bit ints needed
-      // For safety, fetch up to 12 per ticket to allow for rerolls (no duplicates) in rare event.
-      const apiNeeded = tickets * (rules.nWhite + 2); // a bit more than the minimal
+      // Figure out how many random 16-bit ints needed, estimate max needed for rerolls.
+      const apiNeeded = tickets * (rules.nWhite + 2);
       startCooldown();
 
       try {
@@ -109,7 +111,7 @@
         for(let t=0; t<tickets; ++t) {
           // Get unique white balls
           let balls = [];
-          let attempts = 0; // fail-safe
+          let attempts = 0;
           while(balls.length < rules.nWhite && attempts < 40) {
             let v = scaleRaw(raw[(pos++) % raw.length], rules.whiteMin, rules.whiteMax);
             if(!balls.includes(v)) balls.push(v);
